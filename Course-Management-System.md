@@ -97,6 +97,7 @@
 ## 3. Course Approval Workflow
 
 ```
+<<<<<<< HEAD
  INSTRUCTOR                        ADMIN                      STUDENT
 ─────────────────────────────────────────────────────────────────────
      │                               │                           │
@@ -131,6 +132,141 @@
      │                               │  [8] Archive (optional)   │
      │                               │      Status → ARCHIVED ──▶│ hidden
 ─────────────────────────────────────────────────────────────────────
+=======
+                    ┌─────────────────────────────────────┐
+                    │         Existing lmsdb Users         │
+                    │  users table: role = INSTRUCTOR      │
+                    │               role = ADMIN           │
+                    │               role = STUDENT         │
+                    └────────────┬────────────────────────┘
+                                 │
+              ┌──────────────────┼──────────────────┐
+              ▼                  ▼                  ▼
+     ┌─────────────┐    ┌──────────────┐   ┌──────────────┐
+     │ INSTRUCTOR  │    │    ADMIN     │   │   STUDENT    │
+     └──────┬──────┘    └──────┬───────┘   └──────┬───────┘
+            │                  │                  │
+     ┌──────▼──────┐    ┌──────▼───────┐   ┌──────▼───────┐
+     │ Create      │    │ View pending │   │ Browse        │
+     │ Edit draft  │    │ Approve      │   │ published     │
+     │ Upload media│    │ Reject +     │   │ Enroll        │
+     │ Submit      │    │ comments     │   │ Watch videos  │
+     │ Resubmit    │    │ Publish      │   │ Download PDFs │
+     │ View own    │    │ Archive      │   │ Take quizzes  │
+     │ dashboard   │    │ Manage users │   │ Track progress│
+     │ View        │    │ Analytics    │   └──────────────-┘
+     │ feedback    │    └──────────────┘
+     └─────────────┘
+```
+
+| Permission     | Instructor | Admin | Student |
+|----------------|------------|-------|---------|
+| Create course  | ✅         | ❌    | ❌      |
+| Edit course    | ✅         | ❌    | ❌      |
+| Upload media   | ✅         | ❌    | ❌      |
+| Submit course  | ✅         | ❌    | ❌      |
+| Review course  | ❌         | ✅    | ❌      |
+| Approve/Reject | ❌         | ✅    | ❌      |
+| Publish course | ❌         | ✅    | ❌      |
+| Archive course | ❌         | ✅    | ❌      |
+| Enroll         | ❌         | ❌    | ✅      |
+| Watch/Download | ❌         | ❌    | ✅      |
+
+---
+
+## 5. Database Schema
+
+> Tables below are **added** to the existing `lmsdb`. The `users` table already exists with `id`, `name`, `email`, `role`, etc.
+
+```
+lmsdb (existing)                 New tables added
+─────────────────                ──────────────────────────────
+users                            categories
+ ├── id (PK)          ◀──────    courses
+ ├── name                         ├── id (PK)
+ ├── email                        ├── instructor_id (FK → users.id)
+ ├── role                         ├── category_id  (FK → categories.id)
+ └── ...                          ├── title
+                                  ├── description
+                                  ├── status  ENUM
+                                  ├── level   ENUM
+                                  ├── thumbnail_url  (Firebase URL)
+                                  ├── price
+                                  ├── language
+                                  ├── avg_rating
+                                  ├── enrollment_count
+                                  ├── created_at
+                                  ├── updated_at
+                                  └── published_at
+
+courses ◀──────────────────────  course_reviews
+                                  ├── id (PK)
+                                  ├── course_id   (FK → courses.id)
+                                  ├── admin_id    (FK → users.id)
+                                  ├── decision    ENUM: APPROVED|REJECTED
+                                  ├── comment     TEXT
+                                  └── reviewed_at
+
+courses ◀──────────────────────  modules
+                                  ├── id (PK)
+                                  ├── course_id   (FK → courses.id)
+                                  ├── title
+                                  ├── sort_order
+                                  └── is_free_preview
+
+modules ◀──────────────────────  lessons
+                                  ├── id (PK)
+                                  ├── module_id   (FK → modules.id)
+                                  ├── title
+                                  ├── type        ENUM: VIDEO|PDF|QUIZ|TEXT
+                                  ├── resource_url  (Firebase URL)
+                                  ├── duration_seconds
+                                  └── sort_order
+
+lessons ◀──────────────────────  quizzes
+                                  ├── id (PK)
+                                  ├── lesson_id   (FK → lessons.id)
+                                  ├── title
+                                  ├── passing_score
+                                  └── time_limit_mins
+
+quizzes ◀──────────────────────  quiz_questions
+                                  ├── id (PK)
+                                  ├── quiz_id     (FK → quizzes.id)
+                                  ├── question    TEXT
+                                  ├── type        ENUM: MCQ|TRUE_FALSE|SHORT
+                                  ├── options     JSON
+                                  ├── correct_answer
+                                  └── points
+
+users   ◀──────────────────────  enrollments
+courses ◀──────────────────────   ├── id (PK)
+                                  ├── student_id  (FK → users.id)
+                                  ├── course_id   (FK → courses.id)
+                                  ├── enrolled_at
+                                  ├── progress_percent
+                                  └── completed_at
+
+enrollments ◀──────────────────  progress
+lessons     ◀──────────────────   ├── id (PK)
+                                  ├── enrollment_id (FK → enrollments.id)
+                                  ├── lesson_id   (FK → lessons.id)
+                                  ├── completed   BOOLEAN
+                                  ├── watch_seconds
+                                  └── last_accessed
+
+users  ◀───────────────────────  quiz_attempts
+quizzes ◀──────────────────────   ├── id (PK)
+                                  ├── student_id  (FK → users.id)
+                                  ├── quiz_id     (FK → quizzes.id)
+                                  ├── score
+                                  ├── passed      BOOLEAN
+                                  └── attempted_at
+
+courses ◀──────────────────────  tags  +  course_tags
+                                  tags: id · name · slug
+                                  course_tags: course_id · tag_id
+>>>>>>> 2d6a79b (pro)
 ```
 
 ---
