@@ -509,39 +509,6 @@ flowchart LR
     SORT   --> RESULTS
 ```
 
-### API Query Example
-
-```sql
-SELECT
-    c.id,
-    c.title,
-    u.name        AS instructor_name,
-    cat.name      AS category,
-    c.status,
-    c.level,
-    c.avg_rating,
-    c.enrollment_count,
-    c.created_at
-FROM courses c
-JOIN users       u   ON c.instructor_id = u.id
-JOIN categories  cat ON c.category_id   = cat.id
-WHERE
-    c.status = 'PUBLISHED'
-    AND (c.title ILIKE '%:search%'    OR :search IS NULL)
-    AND (u.name  = :instructor        OR :instructor IS NULL)
-    AND (cat.name = :category         OR :category IS NULL)
-    AND (c.level  = :level            OR :level IS NULL)
-ORDER BY
-    CASE :sort
-        WHEN 'latest'      THEN c.created_at
-        WHEN 'most_popular' THEN c.enrollment_count
-        WHEN 'highest_rated' THEN c.avg_rating
-        WHEN 'most_enrolled' THEN c.enrollment_count
-    END DESC
-LIMIT :pageSize OFFSET :offset;
-```
-
----
 
 ## 10. Analytics Dashboard
 
