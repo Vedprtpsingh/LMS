@@ -1,82 +1,129 @@
-import { useEffect, useState } from 'react';
-import { fetchCourses, createCourse, submitCourse, approveCourse, rejectCourse, publishCourse, archiveCourse } from './api';
+import { useEffect, useMemo, useState } from "react";
+import { fetchCourses, createCourse, submitCourse, approveCourse, rejectCourse, publishCourse, archiveCourse } from "./api";
+import CourseCard from "./components/CourseCard";
+import CourseDetail from "./components/CourseDetail";
+import CourseForm from "./components/CourseForm";
 
 const roles = [
-  { value: 'INSTRUCTOR', label: 'Instructor' },
-  { value: 'ADMIN', label: 'Admin' },
-  { value: 'STUDENT', label: 'Student' }
+  { value: "INSTRUCTOR", label: "Instructor" },
+  { value: "ADMIN", label: "Admin" },
+  { value: "STUDENT", label: "Student" },
 ];
+
+const statusLabels = {
+  DRAFT: "Draft",
+  PENDING: "Pending review",
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+  PUBLISHED: "Published",
+  ARCHIVED: "Archived",
+};
 
 function App() {
   const [role, setRole] = useState(roles[0]);
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState(null);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
+  const [showForm, setShowForm] = useState(false);
 
-  const load = async () => {
+  const userId = useMemo(() => {
+    if (role.value === "INSTRUCTOR") return "instructor@example.com";
+    if (role.value === "ADMIN") return "admin@example.com";
+    return "student@example.com";
+  }, [role]);
+
+  const loadCourses = async () => {
     setLoading(true);
-    const data = await fetchCourses(role.value, 'instructor@example.com');
-    setCourses(data);
-    setLoading(false);
+    try {
+      const data = await fetchCourses(role.value, userId);
+      setCourses(data);
+      if (!data.find((course) => course.id === selectedCourse?.id)) {
+        setSelectedCourse(data[0] || null);
+      }
+    } catch (error) {
+      console.error(error);
+      setMessage("Unable to load courses.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    load();
+    loadCourses();
   }, [role]);
-
-  const handleCreate = async () => {
-    const newCourse = await createCourse({
-      title: 'New Course Draft',
-      description: 'A new draft course ready for review.',
-      category: 'General',
-      level: 'Beginner',
-      language: 'English',
-      thumbnailUrl: 'https://via.placeholder.com/640x360.png?text=Draft',
-      tags: ['Draft'],
-      videoUrls: ['https://example.com/video.mp4'],
-      pdfUrls: [],
-      quizJson: '',
-      createdBy: 'instructor@example.com'
-    });
-    setMessage(`Created course ${newCourse.title}`);
-    load();
-  };
 
   const transition = async (course, action) => {
     setLoading(true);
     try {
       let result;
-      if (action === 'submit') result = await submitCourse(course.id);
-      if (action === 'approve') result = await approveCourse(course.id);
-      if (action === 'reject') result = await rejectCourse(course.id, 'Needs a stronger description.');
-      if (action === 'publish') result = await publishCourse(course.id);
-      if (action === 'archive') result = await archiveCourse(course.id);
-      setMessage(result ? `${action.toUpperCase()} action completed for ${result.title}` : 'Action completed');
+      if (action === "submit") result = await submitCourse(course.id);
+      if (action === "approve") result = await approveCourse(course.id);
+      if (action === "reject") result = await rejectCourse(course.id, "Please revise the course description and media.");
+      if (action === "publish") result = await publishCourse(course.id);
+      if (action === "archive") result = await archiveCourse(course.id);
+      setMessage(result ? `${statusLabels[result.status] || action} completed for ${result.title}` : "Action completed.");
+      await loadCourses();
     } catch (error) {
-      setMessage('Action failed.');
+      console.error(error);
+      setMessage("Action failed. Try again.");
+    } finally {
+      setLoading(false);
     }
-    await load();
   };
+
+  const handleCreate = async (payload) => {
+    try {
+      setLoading(true);
+      const course = await createCourse(payload);
+      setMessage(`Created draft ${course.title}`);
+      setSelectedCourse(course);
+      setShowForm(false);
+      await loadCourses();
+    } catch (error) {
+      console.error(error);
+      setMessage("Failed to create course.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const statusCounts = useMemo(() => {
+    return courses.reduce((acc, course) => {
+      acc[course.status] = (acc[course.status] || 0) + 1;
+      return acc;
+    }, {});
+  }, [courses]);
 
   return (
     <div className="app-shell container py-4">
       <header className="mb-4">
-        <div className="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
+        <div className="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3">
           <div>
-            <h1 className="h2">Course Management System</h1>
+            <h1 className="h2 mb-2">Course Management</h1>
+            <p className="text-muted mb-0">Manage course drafts, review workflow, and publish content for students.</p>
           </div>
-          <div className="d-flex gap-2 align-items-center">
-            <label className="m-0 me-2">Role:</label>
-            <select className="form-select" value={role.value} onChange={(event) => setRole(roles.find((option) => option.value === event.target.value) ?? roles[0])}>
-              {roles.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            {role.value === 'INSTRUCTOR' && (
-              <button className="btn btn-primary" onClick={handleCreate}>Create Draft Course</button>
+
+          <div className="d-flex flex-column flex-sm-row gap-2 align-items-stretch align-items-sm-center">
+            <div className="me-0 me-sm-2">
+              <label className="form-label mb-1">Role</label>
+              <select
+                className="form-select"
+                value={role.value}
+                onChange={(event) => setRole(roles.find((option) => option.value === event.target.value) ?? roles[0])}
+              >
+                {roles.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {role.value === "INSTRUCTOR" && (
+              <button className="btn btn-primary align-self-end" onClick={() => setShowForm(true)}>
+                Create Draft Course
+              </button>
             )}
           </div>
         </div>
@@ -84,27 +131,40 @@ function App() {
 
       {message && <div className="alert alert-info">{message}</div>}
 
+      <div className="row g-3 mb-4">
+        {Object.entries(statusCounts).map(([status, count]) => (
+          <div key={status} className="col-6 col-md-4 col-xl-2">
+            <div className="card shadow-sm status-card p-3">
+              <div className="d-flex align-items-center justify-content-between">
+                <span className="small text-uppercase text-muted">{status}</span>
+                <span className="badge bg-secondary">{count}</span>
+              </div>
+              <div className="h3 mb-0 mt-3">{count}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div className="row g-4">
-        <section className="col-lg-8">
-          <div className="card shadow-sm">
+        <section className="col-xl-7">
+          <div className="card shadow-sm course-list-card">
             <div className="card-body">
-              <h2 className="h5">Available Courses</h2>
-              {loading && <p>Loading courses…</p>}
-              {!loading && courses.length === 0 && <p>No courses available for this role.</p>}
-              <div className="row row-cols-1 g-3 mt-3">
+              <div className="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                  <h2 className="h5 mb-1">Course catalog</h2>
+                  <p className="text-muted small mb-0">Browse all courses available for your role.</p>
+                </div>
+                <span className="text-muted small">{loading ? "Refreshing…" : `${courses.length} courses`}</span>
+              </div>
+
+              {!loading && courses.length === 0 && (
+                <div className="text-center py-5 text-muted">No courses available for this role.</div>
+              )}
+
+              <div className="row row-cols-1 row-cols-md-2 g-3">
                 {courses.map((course) => (
                   <div key={course.id} className="col">
-                    <div className="card h-100 course-card" onClick={() => setSelectedCourse(course)} style={{ cursor: 'pointer' }}>
-                      <img src={course.thumbnailUrl || 'https://via.placeholder.com/320x180.png?text=Course'} className="card-img-top" alt={course.title} />
-                      <div className="card-body">
-                        <div className="d-flex justify-content-between align-items-start mb-2">
-                          <span className="badge bg-secondary text-uppercase">{course.status}</span>
-                          <strong>{course.title}</strong>
-                        </div>
-                        <p className="card-text">{course.description}</p>
-                        <small className="text-muted">{course.category} · {course.level} · {course.language}</small>
-                      </div>
-                    </div>
+                    <CourseCard course={course} onSelect={setSelectedCourse} isActive={selectedCourse?.id === course.id} />
                   </div>
                 ))}
               </div>
@@ -112,50 +172,12 @@ function App() {
           </div>
         </section>
 
-        {selectedCourse && (
-          <aside className="col-lg-4">
-            <div className="card shadow-sm course-detail">
-              <div className="card-body">
-                <h3 className="h5">{selectedCourse.title}</h3>
-                <p>{selectedCourse.description}</p>
-                <dl className="row small">
-                  <dt className="col-5">Status:</dt>
-                  <dd className="col-7">{selectedCourse.status}</dd>
-                  <dt className="col-5">Category:</dt>
-                  <dd className="col-7">{selectedCourse.category}</dd>
-                  <dt className="col-5">Level:</dt>
-                  <dd className="col-7">{selectedCourse.level}</dd>
-                  <dt className="col-5">Language:</dt>
-                  <dd className="col-7">{selectedCourse.language}</dd>
-                </dl>
-                {selectedCourse.rejectionComments && (
-                  <div className="alert alert-danger">
-                    <strong>Review comments:</strong>
-                    <p className="mb-0">{selectedCourse.rejectionComments}</p>
-                  </div>
-                )}
-                <div className="d-grid gap-2">
-                  {role.value === 'INSTRUCTOR' && selectedCourse.status !== 'PENDING' && selectedCourse.status !== 'PUBLISHED' && selectedCourse.status !== 'ARCHIVED' && (
-                    <button className="btn btn-warning" onClick={() => transition(selectedCourse, 'submit')}>Submit for Review</button>
-                  )}
-                  {role.value === 'ADMIN' && selectedCourse.status === 'PENDING' && (
-                    <>
-                      <button className="btn btn-success" onClick={() => transition(selectedCourse, 'approve')}>Approve</button>
-                      <button className="btn btn-danger" onClick={() => transition(selectedCourse, 'reject')}>Reject</button>
-                    </>
-                  )}
-                  {role.value === 'ADMIN' && selectedCourse.status === 'APPROVED' && (
-                    <button className="btn btn-primary" onClick={() => transition(selectedCourse, 'publish')}>Publish</button>
-                  )}
-                  {role.value === 'ADMIN' && selectedCourse.status === 'PUBLISHED' && (
-                    <button className="btn btn-secondary" onClick={() => transition(selectedCourse, 'archive')}>Archive</button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </aside>
-        )}
+        <aside className="col-xl-5">
+          <CourseDetail course={selectedCourse} role={role.value} onAction={transition} />
+        </aside>
       </div>
+
+      {showForm && <CourseForm onClose={() => setShowForm(false)} onSubmit={handleCreate} createdBy={userId} />}
     </div>
   );
 }
