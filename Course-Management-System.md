@@ -681,4 +681,159 @@ flowchart LR
     subgraph RESULTS["📋 Results"]
         direction TB
         R1[Course Cards Grid]
- 
+        R2[Pagination]
+        R3[Total Count]
+    end
+
+    SEARCH --> RESULTS
+    SORT   --> RESULTS
+```
+
+### API Query Example
+
+```sql
+SELECT
+    c.id,
+    c.title,
+    u.name        AS instructor_name,
+    cat.name      AS category,
+    c.status,
+    c.level,
+    c.avg_rating,
+    c.enrollment_count,
+    c.created_at
+FROM courses c
+JOIN users       u   ON c.instructor_id = u.id
+JOIN categories  cat ON c.category_id   = cat.id
+WHERE
+    c.status = 'PUBLISHED'
+    AND (c.title ILIKE '%:search%'    OR :search IS NULL)
+    AND (u.name  = :instructor        OR :instructor IS NULL)
+    AND (cat.name = :category         OR :category IS NULL)
+    AND (c.level  = :level            OR :level IS NULL)
+ORDER BY
+    CASE :sort
+        WHEN 'latest'      THEN c.created_at
+        WHEN 'most_popular' THEN c.enrollment_count
+        WHEN 'highest_rated' THEN c.avg_rating
+        WHEN 'most_enrolled' THEN c.enrollment_count
+    END DESC
+LIMIT :pageSize OFFSET :offset;
+```
+
+---
+
+## 10. Analytics Dashboard
+
+### Dashboard Components
+
+```mermaid
+graph TD
+    subgraph DASH["📊 Analytics Dashboard"]
+        direction TB
+
+        subgraph CARDS["📦 KPI Cards"]
+            K1["👥 Total Students\n━━━━━━━━\n12,450\n▲ 8.2% this month"]
+            K2["📚 Total Courses\n━━━━━━━━\n184\n▲ 3 new this week"]
+            K3["💰 Total Revenue\n━━━━━━━━\n$48,320\n▲ 12.5% this month"]
+            K4["✅ Completion Rate\n━━━━━━━━\n67.3%\n▲ 2.1% vs last month"]
+        end
+
+        subgraph CHARTS["📈 Charts"]
+            C1[💰 Revenue Chart\nMonthly line chart\nRevenue over 12 months]
+            C2[📈 Enrollment Graph\nBar chart of new\nenrollments per week]
+            C3[👁️ Most Viewed Courses\nHorizontal bar chart\nTop 10 by views]
+            C4[✅ Completion Analytics\nDonut chart showing\nCompletion vs In-progress]
+            C5[🟢 Active Users\nArea chart of\nDAU / WAU / MAU]
+        end
+    end
+
+    CARDS --> CHARTS
+```
+
+### Dashboard Chart Specifications
+
+| Chart | Type | X-Axis | Y-Axis | Period |
+|---|---|---|---|---|
+| Revenue Chart | Line | Month | Revenue ($) | 12 months |
+| Enrollment Graph | Bar | Week | New Enrollments | 90 days |
+| Most Viewed Courses | Horizontal Bar | Course Name | Views | All time |
+| Completion Analytics | Donut | — | Completed vs In Progress | All time |
+| Active Users | Area | Date | User Count | 30 days |
+
+---
+
+## 11. System Architecture
+
+### Component Architecture
+
+```mermaid
+graph TB
+    subgraph FRONTEND["⚛️ React Frontend"]
+        direction LR
+        RC[React Components]
+        RR[React Router]
+        RX[Redux / Zustand\nState Management]
+        AX[Axios HTTP Client]
+    end
+
+    subgraph BACKEND["🍃 Spring Boot Backend"]
+        direction LR
+        SC[Security\nJWT Auth]
+        CO[Controllers\nREST API]
+        SE[Services\nBusiness Logic]
+        RE[Repositories\nJPA / Hibernate]
+    end
+
+    subgraph STORAGE["💾 Storage"]
+        DB[(PostgreSQL\nDatabase)]
+        S3[S3 / Cloud Storage\nVideos · PDFs · Images]
+    end
+
+    FRONTEND <-->|REST API\nHTTPS / JSON| BACKEND
+    BACKEND <--> DB
+    BACKEND <--> S3
+    FRONTEND <-->|Direct Upload\nPresigned URLs| S3
+
+    style FRONTEND fill:#E3F2FD
+    style BACKEND  fill:#E8F5E9
+    style STORAGE  fill:#FFF3E0
+```
+
+### API Endpoint Summary
+
+```
+Auth
+  POST   /api/auth/register
+  POST   /api/auth/login
+  POST   /api/auth/refresh
+
+Courses (Instructor)
+  POST   /api/courses                    Create draft
+  PUT    /api/courses/{id}               Update course
+  POST   /api/courses/{id}/submit        Submit for review
+  POST   /api/courses/{id}/resubmit      Resubmit after rejection
+  GET    /api/instructor/courses         My courses list
+
+Courses (Admin)
+  GET    /api/admin/courses/pending      Pending queue
+  POST   /api/admin/courses/{id}/approve Approve
+  POST   /api/admin/courses/{id}/reject  Reject with comment
+  GET    /api/admin/courses/published    All published
+
+Courses (Public / Student)
+  GET    /api/courses                    Browse published
+  GET    /api/courses/{id}               Course detail
+  POST   /api/courses/{id}/enroll        Enroll
+
+Media
+  POST   /api/upload/video               Upload video
+  POST   /api/upload/pdf                 Upload PDF
+  POST   /api/upload/thumbnail           Upload thumbnail
+
+Analytics
+  GET    /api/admin/analytics/overview   KPI summary
+  GET    /api/admin/analytics/revenue    Revenue chart
+  GET    /api/admin/analytics/enrollments Enrollment graph
+  GET    /api/admin/analytics/top-courses Most viewed
+```
