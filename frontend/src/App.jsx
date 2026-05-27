@@ -75,7 +75,10 @@ function App() {
   const handleCreate = async (payload) => {
     try {
       setLoading(true);
-      const course = await createCourse(payload);
+      const course = await createCourse({
+        ...payload,
+        createdBy: userId,
+      });
       setMessage(`Created draft ${course.title}`);
       setSelectedCourse(course);
       setShowForm(false);
@@ -177,7 +180,7 @@ function App() {
         </aside>
       </div>
 
-      {showForm && <CourseForm onClose={() => setShowForm(false)} onSubmit={handleCreate} createdBy={userId} />}
+      {showForm && <CourseForm onClose={() => setShowForm(false)} onSubmit={handleCreate} />}
     </div>
   );
 }

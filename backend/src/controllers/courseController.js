@@ -16,8 +16,8 @@ const getCourses = async (req, res) => {
 const createCourse = async (req, res) => {
   const payload = req.body;
 
-  if (!payload.title || !payload.description || !payload.createdBy) {
-    return sendError(res, 400, "title, description, and createdBy are required.");
+  if (!payload.title || !payload.description) {
+    return sendError(res, 400, "title and description are required.");
   }
 
   try {

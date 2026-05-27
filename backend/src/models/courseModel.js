@@ -63,6 +63,7 @@ const getCourseById = async (id) => {
 };
 
 const createCourse = async (payload) => {
+  const createdBy = payload.createdBy || "anonymous@lms.local";
   const [result] = await db.execute(
     `INSERT INTO courses
       (title, description, category, level, language, thumbnail_url, tags, video_urls, pdf_urls, status, created_by, created_at, updated_at)
@@ -78,7 +79,7 @@ const createCourse = async (payload) => {
       JSON.stringify(payload.videoUrls || []),
       JSON.stringify(payload.pdfUrls || []),
       STATUSES.DRAFT,
-      payload.createdBy,
+      createdBy,
     ]
   );
 

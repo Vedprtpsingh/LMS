@@ -12,7 +12,7 @@ const DEFAULT_VALUES = {
   pdfUrls: "",
 };
 
-function CourseForm({ onClose, onSubmit, createdBy }) {
+function CourseForm({ onClose, onSubmit }) {
   const [values, setValues] = useState(DEFAULT_VALUES);
 
   const handleChange = (event) => {
@@ -27,7 +27,6 @@ function CourseForm({ onClose, onSubmit, createdBy }) {
       tags: values.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
       videoUrls: values.videoUrls.split(",").map((url) => url.trim()).filter(Boolean),
       pdfUrls: values.pdfUrls.split(",").map((url) => url.trim()).filter(Boolean),
-      createdBy,
     });
     setValues(DEFAULT_VALUES);
   };
