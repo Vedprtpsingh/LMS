@@ -1,513 +1,597 @@
-
-
-
-#
-# Course Management System a Module of LMS
-### React (Bootstrap,JSX) + Node JS + SQL — Technical Specification
+# Course Management System — LMS Module
+### React (Bootstrap + JSX) · Node.js · MySQL · Firebase Storage
 
 ---
 
-## 1. System Overview
-
-A full-stack course management platform enabling instructors to create and submit courses, admins to review and approve content, and students to access published learning materials.
+## 1. System Architecture
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Instructor  │───▶│    Admin     │────▶│   Student    │
-│   Creates    │     │   Reviews    │     │   Accesses   │
-│   Courses    │     │   Content    │     │   Courses    │
-└──────────────┘     └──────────────┘     └──────────────┘
-        │                   │                    │
-        └───────────────────┴────────────────────┘
-                            │
-                   ┌────────▼────────┐
-                   │                 │
-                   │   REST API      │
-                   └────────┬────────┘
-                            │
-                   ┌────────▼────────┐
-                   │ Database(MySQL) │
-                   └─────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                      Frontend (React)                   │
+│   Instructor UI   │   Admin UI   │   Student UI         │
+└────────────┬──────────────────────────────┬─────────────┘
+             │                              │
+             ▼                              ▼
+┌────────────────────────┐    ┌─────────────────────────┐
+│   Node.js REST API     │    │   Firebase Storage       │
+│   (Express + JWT)      │    │   Videos · PDFs · Imgs   │
+└────────────┬───────────┘    └─────────────────────────┘
+             │
+             ▼
+┌────────────────────────┐
+│   MySQL — lmsdb        │
+│   (Existing users DB)  │
+└────────────────────────┘
 ```
+
+> **Note:** User data (students, instructors, admins) already exists in `lmsdb`. The Course Management module connects to this existing database — no new user tables are created.
 
 ---
 
 ## 2. Course Approval Workflow
 
-```mermaid
-flowchart TD
-    A([🧑‍🏫 Instructor Creates Course]) --> B[Fill Course Details\nTitle · Description · Media]
-    B --> C{Save as DRAFT}
-    C --> D[Upload Videos, PDFs,\nQuizzes & Thumbnail]
-    D --> E[Submit for Review]
-    E --> F([📋 Course Status → PENDING])
-
-    F --> G{👨‍💼 Admin Reviews Course}
-
-    G --> H{Content\nQuality OK?}
-
-    H -->|✅ Pass| I[APPROVE Course]
-    H -->|❌ Fail| J[REJECT with Comments]
-
-    I --> K([📢 Status → APPROVED])
-    J --> L([🔴 Status → REJECTED])
-
-    K --> M[Publish to Platform]
-    M --> N([🌍 Status → PUBLISHED])
-    N --> O([👨‍🎓 Visible to Students])
-
-    L --> P[Instructor Views\nRejection Comments]
-    P --> Q[Instructor Makes\nModifications]
-    Q --> E
-
-    O --> R{Archive?}
-    R -->|Yes| S([📦 Status → ARCHIVED])
-    R -->|No| O
-
-    style A fill:#4CAF50,color:#fff
-    style F fill:#FF9800,color:#fff
-    style K fill:#2196F3,color:#fff
-    style L fill:#f44336,color:#fff
-    style N fill:#9C27B0,color:#fff
-    style S fill:#607D8B,color:#fff
-    style O fill:#00BCD4,color:#fff
+```
+Instructor                    Admin                     Student
+    │                           │                          │
+    │  1. Fill course details    │                          │
+    │  2. Upload media           │                          │
+    │  3. Submit for review      │                          │
+    │──────────────────────────▶│                          │
+    │                           │  4. Review content        │
+    │                           │  5a. Approve ──────────▶ │ Visible
+    │  5b. Reject + comments    │                          │
+    │◀──────────────────────────│                          │
+    │  6. Fix & resubmit        │                          │
+    │──────────────────────────▶│                          │
+    │                           │  7. Approve & Publish ──▶│ Visible
+    │                           │  8. Archive (optional)   │
+    │                           │──────────────────────────│ Hidden
 ```
 
 ---
 
-## 3. User Roles & Permissions
+## 3. Course Status State Machine
 
-```mermaid
-graph LR
-    subgraph ROLES["👥 User Roles"]
-        I[🧑‍🏫 Instructor]
-        A[👨‍💼 Admin]
-        S[👨‍🎓 Student]
-    end
-
-    subgraph INSTRUCTOR_PERMS["Instructor Permissions"]
-        I1[Create Course]
-        I2[Edit Course]
-        I3[Upload Media\nVideos · PDFs · Quizzes]
-        I4[Submit for Review]
-        I5[View Rejection Comments]
-        I6[Resubmit Course]
-        I7[View Own Dashboard]
-    end
-
-    subgraph ADMIN_PERMS["Admin Permissions"]
-        A1[View All Pending Courses]
-        A2[Approve Course]
-        A3[Reject Course + Comments]
-        A4[View Published Courses]
-        A5[Archive Course]
-        A6[Manage Users]
-        A7[View Analytics]
-    end
-
-    subgraph STUDENT_PERMS["Student Permissions"]
-        S1[Browse Published Courses]
-        S2[Enroll in Courses]
-        S3[Watch Videos]
-        S4[Download PDFs]
-        S5[Take Quizzes]
-        S6[Track Progress]
-    end
-
-    I --> INSTRUCTOR_PERMS
-    A --> ADMIN_PERMS
-    S --> STUDENT_PERMS
-
-    style ROLES fill:#E3F2FD
-    style INSTRUCTOR_PERMS fill:#E8F5E9
-    style ADMIN_PERMS fill:#FFF3E0
-    style STUDENT_PERMS fill:#F3E5F5
+```
+                    ┌─────────────────────────────────────────┐
+                    │                                         │
+  [Instructor       │    ┌──────────┐   Submit    ┌─────────┐│
+   creates] ───────▶│    │  DRAFT   │────────────▶│ PENDING ││
+                    │    └──────────┘             └────┬────┘│
+                    │       ▲  ▲                       │     │
+                    │       │  │ Edit           ┌──────┴──┐  │
+                    │       │  └────────────────│ REJECTED│  │
+                    │       │     Instructor    └─────────┘  │
+                    │       │     edits                  │   │
+                    │       │                    ┌───────▼──┐│
+                    │       │          Approve   │ APPROVED ││
+                    │       │                    └────┬─────┘│
+                    │       │                         │Publish│
+                    │       │                    ┌────▼─────┐│
+                    │       │                    │PUBLISHED ││
+                    │       │                    └────┬─────┘│
+                    │       │                         │Archive│
+                    │       │                    ┌────▼─────┐│
+                    │       │                    │ ARCHIVED ││
+                    │       │                    └──────────┘│
+                    │       │                         │Restore│
+                    │       └─────────────────────────┘      │
+                    └─────────────────────────────────────────┘
 ```
 
-| Role       | Create | Edit | Submit | Review | Approve/Reject | Publish | Enroll |
-|------------|--------|------|--------|--------|----------------|---------|--------|
-| Instructor | ✅     | ✅   | ✅     | ❌     | ❌             | ❌      | ❌     |
-| Admin      | ❌     | ❌   | ❌     | ✅     | ✅             | ✅      | ❌     |
-| Student    | ❌     | ❌   | ❌     | ❌     | ❌             | ❌      | ✅     |
+| State      | Visible To              | Editable | Next States              |
+|------------|-------------------------|----------|--------------------------|
+| DRAFT      | Instructor only         | ✅ Yes   | PENDING                  |
+| PENDING    | Instructor + Admin      | ❌ No    | APPROVED · REJECTED      |
+| APPROVED   | Instructor + Admin      | ❌ No    | PUBLISHED                |
+| REJECTED   | Instructor + Admin      | ✅ Yes   | PENDING (resubmit)       |
+| PUBLISHED  | Everyone (incl. students) | ❌ No  | ARCHIVED                 |
+| ARCHIVED   | Admin only              | ❌ No    | PUBLISHED (restore)      |
 
 ---
 
-## 4. Course States & Transitions
+## 4. User Roles & Permissions
 
-```mermaid
-stateDiagram-v2
-    [*] --> DRAFT : Instructor creates course
-
-    DRAFT --> DRAFT : Save changes
-    DRAFT --> PENDING : Submit for review
-
-    PENDING --> APPROVED : Admin approves
-    PENDING --> REJECTED : Admin rejects\nwith comments
-
-    REJECTED --> DRAFT : Instructor\nedits course
-    DRAFT --> PENDING : Resubmit
-
-    APPROVED --> PUBLISHED : Admin publishes
-    PUBLISHED --> ARCHIVED : Admin archives
-
-    ARCHIVED --> PUBLISHED : Restore
-
-    note right of DRAFT
-        Course is being edited
-        Only instructor can see
-    end note
-
-    note right of PENDING
-        Waiting for admin review
-        Locked from editing
-    end note
-
-    note right of PUBLISHED
-        Visible to all students
-        Fully accessible
-    end note
+```
+                    ┌─────────────────────────────────────┐
+                    │         Existing lmsdb Users         │
+                    │  users table: role = INSTRUCTOR      │
+                    │               role = ADMIN           │
+                    │               role = STUDENT         │
+                    └────────────┬────────────────────────┘
+                                 │
+              ┌──────────────────┼──────────────────┐
+              ▼                  ▼                  ▼
+     ┌─────────────┐    ┌──────────────┐   ┌──────────────┐
+     │ INSTRUCTOR  │    │    ADMIN     │   │   STUDENT    │
+     └──────┬──────┘    └──────┬───────┘   └──────┬───────┘
+            │                  │                  │
+     ┌──────▼──────┐    ┌──────▼───────┐   ┌──────▼───────┐
+     │ Create      │    │ View pending │   │ Browse        │
+     │ Edit draft  │    │ Approve      │   │ published     │
+     │ Upload media│    │ Reject +     │   │ Enroll        │
+     │ Submit      │    │ comments     │   │ Watch videos  │
+     │ Resubmit    │    │ Publish      │   │ Download PDFs │
+     │ View own    │    │ Archive      │   │ Take quizzes  │
+     │ dashboard   │    │ Manage users │   │ Track progress│
+     │ View        │    │ Analytics    │   └──────────────┘
+     │ feedback    │    └──────────────┘
+     └─────────────┘
 ```
 
-### State Descriptions
-
-| State       | Description                            | Who Can See         | Editable |
-|-------------|----------------------------------------|---------------------|----------|
-| `DRAFT`     | Being created/edited by instructor     | Instructor only     | ✅ Yes   |
-| `PENDING`   | Submitted, awaiting admin review       | Instructor + Admin  | ❌ No    |
-| `APPROVED`  | Accepted, ready to publish             | Instructor + Admin  | ❌ No    |
-| `REJECTED`  | Rejected, needs modification           | Instructor + Admin  | ✅ Yes   |
-| `PUBLISHED` | Live and visible to students           | Everyone            | ❌ No    |
-| `ARCHIVED`  | Hidden/inactive                        | Admin only          | ❌ No    |
+| Permission     | Instructor | Admin | Student |
+|----------------|------------|-------|---------|
+| Create course  | ✅         | ❌    | ❌      |
+| Edit course    | ✅         | ❌    | ❌      |
+| Upload media   | ✅         | ❌    | ❌      |
+| Submit course  | ✅         | ❌    | ❌      |
+| Review course  | ❌         | ✅    | ❌      |
+| Approve/Reject | ❌         | ✅    | ❌      |
+| Publish course | ❌         | ✅    | ❌      |
+| Archive course | ❌         | ✅    | ❌      |
+| Enroll         | ❌         | ❌    | ✅      |
+| Watch/Download | ❌         | ❌    | ✅      |
 
 ---
 
-## 5. Course Upload Requirements
+## 5. Database Schema
 
-```mermaid
-mindmap
-  root((📚 Course Upload))
-    📝 Basic Info
-      Course Title
-      Description
-      Category
-      Level
-        Beginner
-        Intermediate
-        Advanced
-      Language
-      Tags
-    🖼️ Media
-      Thumbnail Image
-        JPG / PNG
-        Recommended 1280×720
-    🎬 Videos
-      MP4 Format
-      Max 2GB per file
-      Chapter Segments
-      Captions Optional
-    📄 PDFs
-      Lecture Notes
-      Assignments
-      Reading Materials
-      Max 50MB per file
-    📝 Quizzes
-      Multiple Choice
-      True / False
-      Short Answer
-      Passing Score %
-      Time Limit
+> Tables below are **added** to the existing `lmsdb`. The `users` table already exists with `id`, `name`, `email`, `role`, etc.
+
 ```
+lmsdb (existing)                 New tables added
+─────────────────                ──────────────────────────────
+users                            categories
+ ├── id (PK)          ◀──────    courses
+ ├── name                         ├── id (PK)
+ ├── email                        ├── instructor_id (FK → users.id)
+ ├── role                         ├── category_id  (FK → categories.id)
+ └── ...                          ├── title
+                                  ├── description
+                                  ├── status  ENUM
+                                  ├── level   ENUM
+                                  ├── thumbnail_url  (Firebase URL)
+                                  ├── price
+                                  ├── language
+                                  ├── avg_rating
+                                  ├── enrollment_count
+                                  ├── created_at
+                                  ├── updated_at
+                                  └── published_at
 
-### Upload Specifications  (FireBase)
+courses ◀──────────────────────  course_reviews
+                                  ├── id (PK)
+                                  ├── course_id   (FK → courses.id)
+                                  ├── admin_id    (FK → users.id)
+                                  ├── decision    ENUM: APPROVED|REJECTED
+                                  ├── comment     TEXT
+                                  └── reviewed_at
 
-| Asset       | Format        | Max Size    | Required |
-|-------------|---------------|-------------|----------|
-| Thumbnail   | JPG / PNG     | 5 MB        | ✅       |
-| Videos      | MP4 / MOV     | 2 GB each   | ✅       |
-| PDFs        | PDF           | 50 MB each  | Optional |
-| Quizzes     | JSON / Form   | N/A         | Optional |
-| Captions    | SRT / VTT     | 1 MB each   | Optional |
+courses ◀──────────────────────  modules
+                                  ├── id (PK)
+                                  ├── course_id   (FK → courses.id)
+                                  ├── title
+                                  ├── sort_order
+                                  └── is_free_preview
 
----
+modules ◀──────────────────────  lessons
+                                  ├── id (PK)
+                                  ├── module_id   (FK → modules.id)
+                                  ├── title
+                                  ├── type        ENUM: VIDEO|PDF|QUIZ|TEXT
+                                  ├── resource_url  (Firebase URL)
+                                  ├── duration_seconds
+                                  └── sort_order
 
-## 6. Admin Review Checklist
+lessons ◀──────────────────────  quizzes
+                                  ├── id (PK)
+                                  ├── lesson_id   (FK → lessons.id)
+                                  ├── title
+                                  ├── passing_score
+                                  └── time_limit_mins
 
-```mermaid
-flowchart LR
-    subgraph REVIEW["🔍 Admin Review Checklist"]
-        direction TB
-        R1{Content Quality\nIs the content\naccurate and clear?}
-        R2{Audio / Video\nClarity\nGood production\nquality?}
-        R3{Plagiarism\nCheck\nOriginal content?}
-        R4{Missing Lessons\nAll modules\ncomplete?}
-        R5{Offensive Content\nNo harmful or\ninappropriate material?}
-        R6{Quiz Validity\nQuestions are\nclear and correct?}
-    end
+quizzes ◀──────────────────────  quiz_questions
+                                  ├── id (PK)
+                                  ├── quiz_id     (FK → quizzes.id)
+                                  ├── question    TEXT
+                                  ├── type        ENUM: MCQ|TRUE_FALSE|SHORT
+                                  ├── options     JSON
+                                  ├── correct_answer
+                                  └── points
 
-    START([📋 Course Submitted]) --> R1
-    R1 --> R2
-    R2 --> R3
-    R3 --> R4
-    R4 --> R5
-    R5 --> R6
+users   ◀──────────────────────  enrollments
+courses ◀──────────────────────   ├── id (PK)
+                                  ├── student_id  (FK → users.id)
+                                  ├── course_id   (FK → courses.id)
+                                  ├── enrolled_at
+                                  ├── progress_percent
+                                  └── completed_at
 
-    R6 -->|All ✅| APPROVE([✅ APPROVE])
-    R1 -->|❌ Fail| REJECT
-    R2 -->|❌ Fail| REJECT
-    R3 -->|❌ Fail| REJECT
-    R4 -->|❌ Fail| REJECT
-    R5 -->|❌ Fail| REJECT
-    R6 -->|❌ Fail| REJECT([❌ REJECT + Add Comments])
+enrollments ◀──────────────────  progress
+lessons     ◀──────────────────   ├── id (PK)
+                                  ├── enrollment_id (FK → enrollments.id)
+                                  ├── lesson_id   (FK → lessons.id)
+                                  ├── completed   BOOLEAN
+                                  ├── watch_seconds
+                                  └── last_accessed
 
-    style APPROVE fill:#4CAF50,color:#fff
-    style REJECT fill:#f44336,color:#fff
-    style START fill:#2196F3,color:#fff
+users  ◀───────────────────────  quiz_attempts
+quizzes ◀──────────────────────   ├── id (PK)
+                                  ├── student_id  (FK → users.id)
+                                  ├── quiz_id     (FK → quizzes.id)
+                                  ├── score
+                                  ├── passed      BOOLEAN
+                                  └── attempted_at
+
+courses ◀──────────────────────  tags  +  course_tags
+                                  tags: id · name · slug
+                                  course_tags: course_id · tag_id
 ```
 
 ---
 
-## 7. Database Design
+## 6. Firebase Storage — File Upload Flow
 
-### Entity Relationship Diagram
-
-```mermaid
-erDiagram
-    USERS {
-        bigint id PK
-        varchar name
-        varchar email
-        varchar password_hash
-        enum role "INSTRUCTOR | ADMIN | STUDENT"
-        varchar avatar_url
-        timestamp created_at
-        boolean is_active
-    }
-
-    COURSES {
-        bigint id PK
-        varchar title
-        text description
-        bigint instructor_id FK
-        bigint category_id FK
-        enum status "DRAFT|PENDING|APPROVED|REJECTED|PUBLISHED|ARCHIVED"
-        enum level "BEGINNER|INTERMEDIATE|ADVANCED"
-        varchar thumbnail_url
-        decimal price
-        varchar language
-        float avg_rating
-        int enrollment_count
-        timestamp created_at
-        timestamp updated_at
-        timestamp published_at
-    }
-
-    COURSE_REVIEWS {
-        bigint id PK
-        bigint course_id FK
-        bigint admin_id FK
-        enum decision "APPROVED | REJECTED"
-        text comment
-        timestamp reviewed_at
-    }
-
-    MODULES {
-        bigint id PK
-        bigint course_id FK
-        varchar title
-        int sort_order
-        boolean is_free_preview
-    }
-
-    LESSONS {
-        bigint id PK
-        bigint module_id FK
-        varchar title
-        enum type "VIDEO | PDF | QUIZ | TEXT"
-        varchar resource_url
-        int duration_seconds
-        int sort_order
-    }
-
-    QUIZZES {
-        bigint id PK
-        bigint lesson_id FK
-        varchar title
-        int passing_score
-        int time_limit_mins
-    }
-
-    QUIZ_QUESTIONS {
-        bigint id PK
-        bigint quiz_id FK
-        text question
-        enum type "MCQ | TRUE_FALSE | SHORT"
-        json options
-        varchar correct_answer
-        int points
-    }
-
-    CATEGORIES {
-        bigint id PK
-        varchar name
-        varchar slug
-        bigint parent_id FK
-    }
-
-    ENROLLMENTS {
-        bigint id PK
-        bigint student_id FK
-        bigint course_id FK
-        timestamp enrolled_at
-        float progress_percent
-        timestamp completed_at
-    }
-
-    PROGRESS {
-        bigint id PK
-        bigint enrollment_id FK
-        bigint lesson_id FK
-        boolean completed
-        int watch_seconds
-        timestamp last_accessed
-    }
-
-    QUIZ_ATTEMPTS {
-        bigint id PK
-        bigint student_id FK
-        bigint quiz_id FK
-        int score
-        boolean passed
-        timestamp attempted_at
-    }
-
-    TAGS {
-        bigint id PK
-        varchar name
-        varchar slug
-    }
-
-    COURSE_TAGS {
-        bigint course_id FK
-        bigint tag_id FK
-    }
-
-    USERS ||--o{ COURSES : "instructs"
-    USERS ||--o{ ENROLLMENTS : "enrolls"
-    USERS ||--o{ COURSE_REVIEWS : "reviews"
-    COURSES ||--o{ COURSE_REVIEWS : "receives"
-    COURSES ||--o{ MODULES : "has"
-    COURSES ||--o{ ENROLLMENTS : "receives"
-    COURSES }o--|| CATEGORIES : "belongs to"
-    COURSES ||--o{ COURSE_TAGS : "tagged with"
-    TAGS ||--o{ COURSE_TAGS : "applied to"
-    MODULES ||--o{ LESSONS : "contains"
-    LESSONS ||--o| QUIZZES : "has"
-    QUIZZES ||--o{ QUIZ_QUESTIONS : "contains"
-    ENROLLMENTS ||--o{ PROGRESS : "tracks"
-    PROGRESS }o--|| LESSONS : "on"
-    USERS ||--o{ QUIZ_ATTEMPTS : "attempts"
-    QUIZZES ||--o{ QUIZ_ATTEMPTS : "attempted by"
 ```
+Instructor Browser
+       │
+       │  1. Select file (video / PDF / thumbnail)
+       │
+       ▼
+  React Frontend
+       │
+       │  2. Request signed upload URL from Node API
+       │     POST /api/upload/signed-url
+       │     Body: { fileType, mimeType, courseId }
+       │
+       ▼
+  Node.js API
+       │
+       │  3. Generate Firebase signed URL
+       │     (Admin SDK — firebase-admin)
+       │
+       ▼
+  Firebase Storage
+       │
+       │  4. Return signed URL to frontend
+       │
+       ▼
+  React Frontend
+       │
+       │  5. PUT file directly to Firebase Storage
+       │     (bypasses Node — large file safe)
+       │
+       ▼
+  Firebase Storage  ──▶  stores file
+       │
+       │  6. On upload complete, frontend sends
+       │     file URL to Node API
+       │     POST /api/lessons/  (resource_url = Firebase URL)
+       │
+       ▼
+  MySQL lmsdb
+       └── lessons.resource_url = "https://storage.googleapis.com/..."
+```
+
+### Upload Limits
+
+| Asset      | Format        | Max Size  | Firebase Path                         |
+|------------|---------------|-----------|---------------------------------------|
+| Thumbnail  | JPG · PNG     | 5 MB      | `thumbnails/{courseId}/{filename}`    |
+| Video      | MP4 · MOV     | 2 GB      | `videos/{courseId}/{moduleId}/{name}` |
+| PDF        | PDF           | 50 MB     | `pdfs/{courseId}/{moduleId}/{name}`   |
+| Caption    | SRT · VTT     | 1 MB      | `captions/{lessonId}/{name}`          |
+
 ---
 
-## 8. Frontend Features
+## 7. REST API Endpoints
 
-### A. Instructor Dashboard
-
-```mermaid
-graph TD
-    subgraph INSTRUCTOR_DASH["🧑‍🏫 Instructor Dashboard"]
-        direction LR
-
-        subgraph COURSE_MGMT["Course Management"]
-            C1[➕ Create New Course]
-            C2[✏️ Edit Course Details]
-            C3[📤 Submit for Approval]
-            C4[🔁 Resubmit After Rejection]
-        end
-
-        subgraph MEDIA_UPLOAD["Media Upload"]
-            M1[🎬 Upload Videos]
-            M2[📄 Upload PDFs]
-            M3[🧩 Create Quizzes]
-            M4[🖼️ Upload Thumbnail]
-        end
-
-        subgraph FEEDBACK["Feedback & Status"]
-            F1[🔴 View Rejection Comments]
-            F2[📊 Course Status Tracker]
-            F3[📈 Enrollment Stats]
-        end
-    end
-
-    INSTRUCTOR_DASH --> COURSE_MGMT
-    INSTRUCTOR_DASH --> MEDIA_UPLOAD
-    INSTRUCTOR_DASH --> FEEDBACK
 ```
+Authentication (uses existing lmsdb users)
+─────────────────────────────────────────
+POST   /api/auth/login              → JWT token
+POST   /api/auth/logout
 
-### B. Admin Dashboard
+Courses
+─────────────────────────────────────────
+GET    /api/courses                 → list (filter by status, category, level)
+GET    /api/courses/:id             → course detail
+POST   /api/courses                 → create draft          [INSTRUCTOR]
+PUT    /api/courses/:id             → update draft/rejected [INSTRUCTOR]
+POST   /api/courses/:id/submit      → DRAFT → PENDING       [INSTRUCTOR]
+POST   /api/courses/:id/resubmit    → REJECTED → PENDING    [INSTRUCTOR]
+DELETE /api/courses/:id             → delete draft          [INSTRUCTOR]
 
-```mermaid
-graph TD
-    subgraph ADMIN_DASH["👨‍💼 Admin Dashboard"]
-        direction LR
+Admin — Course Review
+─────────────────────────────────────────
+GET    /api/admin/courses/pending   → pending queue         [ADMIN]
+POST   /api/admin/courses/:id/approve  → PENDING → APPROVED [ADMIN]
+POST   /api/admin/courses/:id/reject   → PENDING → REJECTED [ADMIN]
+POST   /api/admin/courses/:id/publish  → APPROVED → PUBLISHED [ADMIN]
+POST   /api/admin/courses/:id/archive  → PUBLISHED → ARCHIVED [ADMIN]
+POST   /api/admin/courses/:id/restore  → ARCHIVED → PUBLISHED [ADMIN]
 
-        subgraph REVIEW_CENTER["Review Center"]
-            R1[📋 View Pending Courses Queue]
-            R2[🔍 Inspect Course Content]
-            R3[✅ Approve Course]
-            R4[❌ Reject Course + Comments]
-        end
+Modules & Lessons
+─────────────────────────────────────────
+POST   /api/courses/:id/modules         → add module       [INSTRUCTOR]
+PUT    /api/modules/:id                 → edit module      [INSTRUCTOR]
+DELETE /api/modules/:id                 → delete module    [INSTRUCTOR]
+POST   /api/modules/:id/lessons         → add lesson       [INSTRUCTOR]
+PUT    /api/lessons/:id                 → edit lesson      [INSTRUCTOR]
+DELETE /api/lessons/:id                 → delete lesson    [INSTRUCTOR]
 
-        subgraph PUBLISHED["Published Courses"]
-            P1[📚 View All Published Courses]
-            P2[📦 Archive Course]
-            P3[📢 Feature a Course]
-        end
+File Upload
+─────────────────────────────────────────
+POST   /api/upload/signed-url           → Firebase signed URL [INSTRUCTOR]
 
-        subgraph ANALYTICS["Analytics"]
-            A1[👥 Student Enrollments]
-            A2[💰 Revenue Reports]
-            A3[📊 Completion Rates]
-            A4[📈 Active Users]
-        end
-    end
+Quizzes
+─────────────────────────────────────────
+POST   /api/lessons/:id/quiz            → create quiz      [INSTRUCTOR]
+PUT    /api/quizzes/:id                 → update quiz      [INSTRUCTOR]
+POST   /api/quizzes/:id/questions       → add question     [INSTRUCTOR]
+PUT    /api/quiz-questions/:id          → edit question    [INSTRUCTOR]
+POST   /api/quizzes/:id/attempt         → submit attempt   [STUDENT]
 
-    ADMIN_DASH --> REVIEW_CENTER
-    ADMIN_DASH --> PUBLISHED
-    ADMIN_DASH --> ANALYTICS
+Enrollments & Progress
+─────────────────────────────────────────
+POST   /api/enrollments                 → enroll in course [STUDENT]
+GET    /api/enrollments/my              → my enrollments   [STUDENT]
+POST   /api/progress                    → mark lesson done [STUDENT]
+GET    /api/progress/:enrollmentId      → get progress     [STUDENT]
+
+Search
+─────────────────────────────────────────
+GET    /api/courses/search?q=&category=&level=&status=&sort=
+
+Analytics (Admin)
+─────────────────────────────────────────
+GET    /api/admin/analytics/enrollments
+GET    /api/admin/analytics/completion
+GET    /api/admin/analytics/revenue
 ```
 
 ---
 
-## 9. Advanced Search & Filters
+## 8. Frontend Pages & Components
 
-```mermaid
-flowchart LR
-    subgraph SEARCH["🔍 Search & Filter Panel"]
-        direction TB
-        S1[🔤 Course Name\nFull-text search]
-        S2[🧑‍🏫 Instructor\nDropdown select]
-        S3[📂 Category\nDropdown select]
-        S4[🔖 Status\nDropdown select]
-        S5[🎓 Level\nDropdown select]
-    end
+### Instructor
 
-    subgraph SORT["↕️ Sort Options"]
-        direction TB
-        T1[🕒 Latest]
-        T2[🔥 Most Popular]
-        T3[⭐ Highest Rated]
-        T4[👥 Most Enrolled]
-    end
+```
+/instructor
+├── /dashboard            Stat cards · recent courses · alerts
+├── /courses              Table: all my courses + status badges
+├── /courses/new          Step 1 — basic info form (title, desc, category, level, tags)
+├── /courses/:id/media    Step 2 — module builder + upload zone (video/PDF)
+├── /courses/:id/quiz     Step 3 — quiz builder (MCQ / True-False / Short)
+├── /courses/:id/preview  Final check before submit
+└── /feedback             Rejection comments + resubmit button
+```
 
-    subgraph RESULTS["📋 Results"]
-        direction TB
-        R1[Course Cards Grid]
-        R2[Pagination]
-        R3[Total Count]
-    end
+### Admin
 
-    SEARCH --> RESULTS
-    SORT   --> RESULTS
+```
+/admin
+├── /dashboard            Stats · pending count alert
+├── /review               Pending queue · 6-point checklist · approve/reject
+├── /published            Published table · archive · feature toggle
+├── /analytics            Bar charts: enrollments · completion · revenue
+└── /users                User table · invite · deactivate
+```
+
+### Student
+
+```
+/student
+├── /dashboard            Continue learning · progress bars
+├── /browse               Course grid · search · filter · sort
+├── /course/:id           Course detail · enroll CTA
+├── /my-courses           Enrolled list + per-lesson progress
+├── /learn/:id            Video player · PDF viewer · quiz
+└── /progress             Weekly activity · quiz scores · streak
+```
+
+---
+
+## 9. Video & PDF Feature — Component Flow
+
+```
+Video Upload (Instructor)
+──────────────────────────────────────────────────────
+  <VideoUploader courseId lessonId>
+       │
+       ├── Drag-and-drop zone  (MP4 / MOV · max 2 GB)
+       ├── Progress bar (chunked upload to Firebase)
+       ├── On complete → save URL to lessons table
+       └── Optional: SRT/VTT caption upload
+
+
+Video Playback (Student)
+──────────────────────────────────────────────────────
+  <VideoPlayer lessonId>
+       │
+       ├── Fetch resource_url from API
+       ├── HTML5 <video> + Firebase signed URL (time-limited)
+       ├── Track watch_seconds every 30s → POST /api/progress
+       └── On 90% watched → mark lesson completed
+
+
+PDF Upload (Instructor)
+──────────────────────────────────────────────────────
+  <PDFUploader courseId lessonId>
+       │
+       ├── File picker  (PDF · max 50 MB)
+       ├── Upload to Firebase pdfs/ path
+       └── Save URL to lessons.resource_url
+
+
+PDF Viewer (Student)
+──────────────────────────────────────────────────────
+  <PDFViewer lessonId>
+       │
+       ├── Fetch signed URL from API
+       ├── Render with react-pdf (PDF.js)
+       ├── Download button → window.open(signedUrl)
+       └── On view → mark lesson completed
+```
+
+---
+
+## 10. Admin Review Checklist
+
+```
+Course submitted (PENDING)
+         │
+         ▼
+  ┌──────────────────────────────────────┐
+  │ Admin Review Checklist               │
+  │                                      │
+  │  ☐  Content quality — clear & accurate │
+  │  ☐  Audio/video — good production    │
+  │  ☐  Plagiarism — original content    │
+  │  ☐  All modules complete             │
+  │  ☐  No offensive material            │
+  │  ☐  Quiz answers valid               │
+  └──────────┬───────────────────────────┘
+             │
+      ┌──────┴──────┐
+      │             │
+  All ✅         Any ❌
+      │             │
+      ▼             ▼
+  APPROVE       REJECT
+  (status →     (status →
+  APPROVED)     REJECTED +
+                comment saved
+                to course_reviews)
+```
+
+---
+
+## 11. Search & Filter
+
+```
+GET /api/courses/search
+
+Query params:
+  q          full-text on title + description
+  category   category slug
+  level      BEGINNER | INTERMEDIATE | ADVANCED
+  status     published (student) | any (admin) | own (instructor)
+  sort       latest | popular | rating | enrolled
+
+Response:
+  {
+    total: number,
+    page: number,
+    courses: [ { id, title, thumbnail_url, instructor,
+                 level, rating, enrollment_count, status } ]
+  }
+```
+
+---
+
+## 12. Project Folder Structure
+
+```
+project-root/
+├── client/                        React frontend
+│   ├── src/
+│   │   ├── pages/
+│   │   │   ├── instructor/
+│   │   │   │   ├── Dashboard.jsx
+│   │   │   │   ├── CourseList.jsx
+│   │   │   │   ├── CreateCourse.jsx
+│   │   │   │   ├── UploadMedia.jsx
+│   │   │   │   ├── QuizBuilder.jsx
+│   │   │   │   └── Feedback.jsx
+│   │   │   ├── admin/
+│   │   │   │   ├── Dashboard.jsx
+│   │   │   │   ├── PendingReview.jsx
+│   │   │   │   ├── Published.jsx
+│   │   │   │   ├── Analytics.jsx
+│   │   │   │   └── Users.jsx
+│   │   │   └── student/
+│   │   │       ├── Dashboard.jsx
+│   │   │       ├── Browse.jsx
+│   │   │       ├── CourseDetail.jsx
+│   │   │       ├── Learn.jsx
+│   │   │       └── Progress.jsx
+│   │   ├── components/
+│   │   │   ├── VideoUploader.jsx
+│   │   │   ├── VideoPlayer.jsx
+│   │   │   ├── PDFUploader.jsx
+│   │   │   ├── PDFViewer.jsx
+│   │   │   ├── CourseCard.jsx
+│   │   │   ├── StatusBadge.jsx
+│   │   │   └── ReviewChecklist.jsx
+│   │   ├── services/
+│   │   │   ├── api.js              axios instance + JWT interceptor
+│   │   │   └── firebase.js         Firebase Storage SDK
+│   │   └── context/
+│   │       └── AuthContext.jsx     role-based route guard
+│
+├── server/                        Node.js backend
+│   ├── routes/
+│   │   ├── auth.js
+│   │   ├── courses.js
+│   │   ├── modules.js
+│   │   ├── lessons.js
+│   │   ├── quizzes.js
+│   │   ├── enrollments.js
+│   │   ├── progress.js
+│   │   ├── upload.js              Firebase signed URL generator
+│   │   └── admin.js
+│   ├── middleware/
+│   │   ├── auth.js                JWT verify
+│   │   └── role.js                requireRole('ADMIN') etc.
+│   ├── models/                    MySQL query helpers
+│   ├── config/
+│   │   ├── db.js                  mysql2 pool → lmsdb
+│   │   └── firebase.js            firebase-admin init
+│   └── app.js
+│
+└── database/
+    └── migrations/
+        └── 001_course_management.sql   all new tables (no changes to users)
+```
+
+---
+
+## 13. Environment Variables
+
+```
+# Server (.env)
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=lmsdb
+DB_USER=root
+DB_PASS=yourpassword
+
+JWT_SECRET=your_jwt_secret
+
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----...
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk@your-project.iam.gserviceaccount.com
+FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+
+# Client (.env)
+REACT_APP_API_URL=http://localhost:5000/api
+REACT_APP_FIREBASE_API_KEY=...
+REACT_APP_FIREBASE_AUTH_DOMAIN=...
+REACT_APP_FIREBASE_STORAGE_BUCKET=...
+REACT_APP_FIREBASE_APP_ID=...
+```
+
+---
+
+## 14. Key Implementation Notes
+
+1. **Existing users** — Query `lmsdb.users` directly using `role` column. No changes to the users table.
+2. **JWT auth** — On login, fetch user from `lmsdb.users`, sign JWT with `{ id, role }`. All protected routes verify role via middleware.
+3. **Video upload** — Use Firebase signed URLs (PUT) from the client directly. Node API only generates the URL and saves the final Firebase path to MySQL after upload.
+4. **PDF viewer** — Use `react-pdf` (PDF.js wrapper). Generate a short-lived Firebase signed URL server-side to prevent direct hotlinking.
+5. **Progress tracking** — Video player sends `watch_seconds` heartbeat every 30 seconds. Lesson is marked complete at 90% watched.
+6. **Course locking** — PENDING and APPROVED courses have `is_editable = false` enforced both at API level (middleware check on `status`) and in the frontend (form fields disabled).
+7. **Rejection cycle** — When admin rejects, a row is inserted into `course_reviews` (decision=REJECTED, comment=…) and course status flips to REJECTED. Instructor fetches latest rejection comment via `GET /api/courses/:id/review`.
+8. **Search** — Use MySQL `FULLTEXT` index on `courses(title, description)` with `MATCH … AGAINST` for the `q` param.
 ```
