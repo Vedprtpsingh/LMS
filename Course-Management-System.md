@@ -1,5 +1,9 @@
-# Course Management System
-### React (Bootstrap,JSX) + Spring Boot + SQL — Technical Specification
+
+
+
+#
+# Course Management System a Module of LMS
+### React (Bootstrap,JSX) + Node JS + SQL — Technical Specification
 
 ---
 
@@ -9,7 +13,7 @@ A full-stack course management platform enabling instructors to create and submi
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Instructor  │────▶│    Admin     │────▶│   Student    │
+│  Instructor  │───▶│    Admin     │────▶│   Student    │
 │   Creates    │     │   Reviews    │     │   Accesses   │
 │   Courses    │     │   Content    │     │   Courses    │
 └──────────────┘     └──────────────┘     └──────────────┘
@@ -17,7 +21,7 @@ A full-stack course management platform enabling instructors to create and submi
         └───────────────────┴────────────────────┘
                             │
                    ┌────────▼────────┐
-                   │  Spring Boot    │
+                   │                 │
                    │   REST API      │
                    └────────┬────────┘
                             │
@@ -214,7 +218,7 @@ mindmap
       Time Limit
 ```
 
-### Upload Specifications
+### Upload Specifications  (FireBase)
 
 | Asset       | Format        | Max Size    | Required |
 |-------------|---------------|-------------|----------|
