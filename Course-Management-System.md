@@ -22,7 +22,6 @@ A full-stack course management platform enabling instructors to create and submi
                    └────────┬────────┘
                             │
                    ┌────────▼────────┐
-                   │   PostgreSQL    │
                    │    Database     │
                    └─────────────────┘
 ```
