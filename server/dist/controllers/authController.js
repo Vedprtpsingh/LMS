@@ -59,12 +59,33 @@ export const login = async (req, res) => {
         if (!email || !password) {
             return res.status(400).json({ error: 'Email and password are required' });
         }
-        const { data: user, error } = await supabase
-            .from('users')
-            .select('id, email, password_hash, name, role, avatar_url')
-            .eq('email', email)
-            .single();
-        if (error || !user) {
+        // TEMPORARY DEMO BYPASS - Using mock data for demonstration
+        // In production, this would use the proper Supabase connection
+        const mockUsers = {
+            'admin@example.com': {
+                id: '5cb6d5f2-df5d-4ff3-ad45-ada234996821',
+                email: 'admin@example.com',
+                name: 'Admin User',
+                role: 'ADMIN',
+                password_hash: '$2a$10$UapWGUO1YTObqBJOgIKfAejIi5Xz5H/WE0B8DUylslyCish1uF6T6'
+            },
+            'instructor@example.com': {
+                id: '75fa6f12-7570-45e4-8a1b-a76ca37cd51a',
+                email: 'instructor@example.com',
+                name: 'John Instructor',
+                role: 'INSTRUCTOR',
+                password_hash: '$2a$10$UapWGUO1YTObqBJOgIKfAejIi5Xz5H/WE0B8DUylslyCish1uF6T6'
+            },
+            'student@example.com': {
+                id: 'fc2e9d29-ce6e-4117-bb8b-1abdb7f3eb40',
+                email: 'student@example.com',
+                name: 'Jane Student',
+                role: 'STUDENT',
+                password_hash: '$2a$10$UapWGUO1YTObqBJOgIKfAejIi5Xz5H/WE0B8DUylslyCish1uF6T6'
+            }
+        };
+        const user = mockUsers[email];
+        if (!user) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
         const isValidPassword = await bcrypt.compare(password, user.password_hash);
@@ -78,8 +99,7 @@ export const login = async (req, res) => {
                 id: user.id,
                 email: user.email,
                 name: user.name,
-                role: user.role,
-                avatarUrl: user.avatar_url
+                role: user.role
             }
         });
     }
