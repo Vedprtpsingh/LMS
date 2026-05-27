@@ -3,13 +3,24 @@ const Course = require("../models/courseModel");
 const sendError = (res, status, message) => res.status(status).json({ error: message });
 
 const getCourses = async (req, res) => {
-  const { role, userId } = req.query;
+  const { role, userId, search, status } = req.query;
   try {
-    const courses = await Course.getCoursesByRole(role, userId || "anonymous");
+    const courses = await Course.getCoursesByRole(role, userId || "anonymous@lms.local", search, status);
     res.json(courses);
   } catch (error) {
     console.error(error);
     sendError(res, 500, "Failed to load courses.");
+  }
+};
+
+const getCourseById = async (req, res) => {
+  try {
+    const course = await Course.getCourseById(req.params.id);
+    if (!course) return sendError(res, 404, "Course not found.");
+    res.json(course);
+  } catch (error) {
+    console.error(error);
+    sendError(res, 500, "Failed to load course.");
   }
 };
 
@@ -26,6 +37,38 @@ const createCourse = async (req, res) => {
   } catch (error) {
     console.error(error);
     sendError(res, 500, "Failed to create course.");
+  }
+};
+
+const updateCourse = async (req, res) => {
+  const payload = req.body;
+  try {
+    const course = await Course.getCourseById(req.params.id);
+    if (!course) return sendError(res, 404, "Course not found.");
+    if (![Course.STATUSES.DRAFT, Course.STATUSES.REJECTED].includes(course.status)) {
+      return sendError(res, 400, "Only DRAFT or REJECTED courses can be edited.");
+    }
+
+    const updated = await Course.updateCourse(req.params.id, payload);
+    res.json(updated);
+  } catch (error) {
+    console.error(error);
+    sendError(res, 500, "Failed to update course.");
+  }
+};
+
+const deleteCourse = async (req, res) => {
+  try {
+    const course = await Course.getCourseById(req.params.id);
+    if (!course) return sendError(res, 404, "Course not found.");
+    if (course.status === Course.STATUSES.PUBLISHED) {
+      return sendError(res, 400, "Published courses cannot be deleted.");
+    }
+    await Course.deleteCourse(req.params.id);
+    res.status(204).end();
+  } catch (error) {
+    console.error(error);
+    sendError(res, 500, "Failed to delete course.");
   }
 };
 
@@ -107,7 +150,10 @@ const archiveCourse = async (req, res) => {
 
 module.exports = {
   getCourses,
+  getCourseById,
   createCourse,
+  updateCourse,
+  deleteCourse,
   submitCourse,
   approveCourse,
   rejectCourse,

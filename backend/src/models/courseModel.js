@@ -35,22 +35,35 @@ const normalizeCourse = (row) => ({
   updatedAt: row.updated_at,
 });
 
-const getCoursesByRole = async (role, userId) => {
+const getCoursesByRole = async (role, userId, search, status) => {
   let query = "SELECT * FROM courses";
-  let params = [];
+  const conditions = [];
+  const params = [];
 
   if (role === "INSTRUCTOR") {
-    query += " WHERE created_by = ? ORDER BY updated_at DESC";
-    params = [userId];
+    conditions.push("created_by = ?");
+    params.push(userId || "anonymous@lms.local");
   } else if (role === "STUDENT") {
-    query += " WHERE status = ? ORDER BY updated_at DESC";
-    params = [STATUSES.PUBLISHED];
-  } else if (role === "ADMIN") {
-    query += " ORDER BY updated_at DESC";
-  } else {
-    query += " WHERE status = ? ORDER BY updated_at DESC";
-    params = [STATUSES.PUBLISHED];
+    conditions.push("status = ?");
+    params.push(STATUSES.PUBLISHED);
   }
+
+  if (status && status !== "ALL") {
+    conditions.push("status = ?");
+    params.push(status);
+  }
+
+  if (search) {
+    const likeQuery = `%${search}%`;
+    conditions.push("(title LIKE ? OR description LIKE ? OR category LIKE ?)");
+    params.push(likeQuery, likeQuery, likeQuery);
+  }
+
+  if (conditions.length > 0) {
+    query += ` WHERE ${conditions.join(" AND ")}`;
+  }
+
+  query += " ORDER BY updated_at DESC";
 
   const [rows] = await db.execute(query, params);
   return rows.map(normalizeCourse);
@@ -86,6 +99,40 @@ const createCourse = async (payload) => {
   return getCourseById(result.insertId);
 };
 
+const updateCourse = async (id, payload) => {
+  await db.execute(
+    `UPDATE courses SET
+      title = ?,
+      description = ?,
+      category = ?,
+      level = ?,
+      language = ?,
+      thumbnail_url = ?,
+      tags = ?,
+      video_urls = ?,
+      pdf_urls = ?,
+      updated_at = NOW()
+    WHERE id = ?`,
+    [
+      payload.title,
+      payload.description,
+      payload.category,
+      payload.level,
+      payload.language,
+      payload.thumbnailUrl,
+      JSON.stringify(payload.tags || []),
+      JSON.stringify(payload.videoUrls || []),
+      JSON.stringify(payload.pdfUrls || []),
+      id,
+    ]
+  );
+  return getCourseById(id);
+};
+
+const deleteCourse = async (id) => {
+  await db.execute("DELETE FROM courses WHERE id = ?", [id]);
+};
+
 const updateCourseStatus = async (id, status, rejectionComments = null) => {
   await db.execute(
     "UPDATE courses SET status = ?, rejection_comments = ?, updated_at = NOW() WHERE id = ?",
@@ -99,5 +146,7 @@ module.exports = {
   getCoursesByRole,
   getCourseById,
   createCourse,
+  updateCourse,
+  deleteCourse,
   updateCourseStatus,
 };

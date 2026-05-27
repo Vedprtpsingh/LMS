@@ -5,18 +5,36 @@ async function request(path, options) {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
+
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`Request failed: ${response.status} ${body}`);
   }
+
+  if (response.status === 204) {
+    return null;
+  }
+
   return response.json();
 }
 
-export const fetchCourses = (role, userId) =>
-  request(`${BASE}?role=${encodeURIComponent(role)}&userId=${encodeURIComponent(userId)}`);
+export const fetchCourses = (role, userId, search, status) => {
+  const params = new URLSearchParams({ role, userId });
+  if (search) params.set('search', search);
+  if (status) params.set('status', status);
+  return request(`${BASE}?${params.toString()}`);
+};
+
+export const fetchCourse = (id) => request(`${BASE}/${id}`);
 
 export const createCourse = (payload) =>
   request(BASE, { method: 'POST', body: JSON.stringify(payload) });
+
+export const updateCourse = (id, payload) =>
+  request(`${BASE}/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+
+export const deleteCourse = (id) =>
+  request(`${BASE}/${id}`, { method: 'DELETE' });
 
 export const submitCourse = (id) =>
   request(`${BASE}/${id}/submit`, { method: 'POST' });

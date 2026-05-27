@@ -9,7 +9,7 @@ const STATUS_VARIANTS = {
   ARCHIVED: "dark",
 };
 
-function CourseDetail({ course, role, onAction }) {
+function CourseDetail({ course, role, onAction, onEdit, onDelete }) {
   if (!course) {
     return (
       <div className="card shadow-sm p-4 text-center empty-detail">
@@ -26,6 +26,8 @@ function CourseDetail({ course, role, onAction }) {
   const canReject = role === "ADMIN" && course.status === "PENDING";
   const canPublish = role === "ADMIN" && course.status === "APPROVED";
   const canArchive = role === "ADMIN" && course.status === "PUBLISHED";
+  const canEdit = role === "INSTRUCTOR" && ["DRAFT", "REJECTED"].includes(course.status);
+  const canDelete = role === "INSTRUCTOR" && course.status !== "PUBLISHED";
 
   return (
     <div className="card shadow-sm course-detail-card">
@@ -99,6 +101,14 @@ function CourseDetail({ course, role, onAction }) {
           </div>
         </div>
 
+        <div className="d-flex flex-wrap gap-2 mb-3">
+          {canEdit && (
+            <button className="btn btn-outline-primary" onClick={() => onEdit(course)}>Edit course</button>
+          )}
+          {canDelete && (
+            <button className="btn btn-outline-danger" onClick={() => onDelete(course)}>Delete course</button>
+          )}
+        </div>
         <div className="d-flex flex-wrap gap-2">
           {canSubmit && (
             <button className="btn btn-warning" onClick={() => onAction(course, "submit")}>Submit for Review</button>

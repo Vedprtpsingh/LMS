@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 const DEFAULT_VALUES = {
   title: "",
@@ -12,8 +12,20 @@ const DEFAULT_VALUES = {
   pdfUrls: "",
 };
 
-function CourseForm({ onClose, onSubmit }) {
-  const [values, setValues] = useState(DEFAULT_VALUES);
+function CourseForm({ onClose, onSubmit, initialValues }) {
+  const convertInitialValues = (values) => ({
+    ...DEFAULT_VALUES,
+    ...values,
+    tags: Array.isArray(values?.tags) ? values.tags.join(",") : values?.tags || "",
+    videoUrls: Array.isArray(values?.videoUrls) ? values.videoUrls.join(",") : values?.videoUrls || "",
+    pdfUrls: Array.isArray(values?.pdfUrls) ? values.pdfUrls.join(",") : values?.pdfUrls || "",
+  });
+
+  const [values, setValues] = useState(convertInitialValues(initialValues));
+
+  useEffect(() => {
+    setValues(convertInitialValues(initialValues));
+  }, [initialValues]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -31,13 +43,15 @@ function CourseForm({ onClose, onSubmit }) {
     setValues(DEFAULT_VALUES);
   };
 
+  const isEdit = Boolean(initialValues?.id);
+
   return (
     <div className="modal d-block fade show" tabIndex="-1" role="dialog">
       <div className="modal-backdrop fade show"></div>
       <div className="modal-dialog modal-xl modal-dialog-centered" role="document">
         <div className="modal-content shadow-lg rounded-4">
           <div className="modal-header">
-            <h5 className="modal-title">Create New Course Draft</h5>
+            <h5 className="modal-title">{isEdit ? "Update Course" : "Create New Course Draft"}</h5>
             <button type="button" className="btn-close" aria-label="Close" onClick={onClose}></button>
           </div>
           <form onSubmit={handleSubmit}>
@@ -87,7 +101,7 @@ function CourseForm({ onClose, onSubmit }) {
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-outline-secondary" onClick={onClose}>Cancel</button>
-              <button type="submit" className="btn btn-primary">Create Draft</button>
+              <button type="submit" className="btn btn-primary">{isEdit ? "Save changes" : "Create Draft"}</button>
             </div>
           </form>
         </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchCourses, createCourse, submitCourse, approveCourse, rejectCourse, publishCourse, archiveCourse } from "./api";
+import { fetchCourses, createCourse, updateCourse, deleteCourse, submitCourse, approveCourse, rejectCourse, publishCourse, archiveCourse } from "./api";
 import CourseCard from "./components/CourseCard";
 import CourseDetail from "./components/CourseDetail";
 import CourseForm from "./components/CourseForm";
@@ -26,6 +26,9 @@ function App() {
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [message, setMessage] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [editingCourse, setEditingCourse] = useState(null);
 
   const userId = useMemo(() => {
     if (role.value === "INSTRUCTOR") return "instructor@example.com";
@@ -36,7 +39,7 @@ function App() {
   const loadCourses = async () => {
     setLoading(true);
     try {
-      const data = await fetchCourses(role.value, userId);
+      const data = await fetchCourses(role.value, userId, search, statusFilter);
       setCourses(data);
       if (!data.find((course) => course.id === selectedCourse?.id)) {
         setSelectedCourse(data[0] || null);
@@ -51,7 +54,7 @@ function App() {
 
   useEffect(() => {
     loadCourses();
-  }, [role]);
+  }, [role, search, statusFilter]);
 
   const transition = async (course, action) => {
     setLoading(true);
@@ -64,6 +67,9 @@ function App() {
       if (action === "archive") result = await archiveCourse(course.id);
       setMessage(result ? `${statusLabels[result.status] || action} completed for ${result.title}` : "Action completed.");
       await loadCourses();
+      if (result?.id === selectedCourse?.id) {
+        setSelectedCourse(result);
+      }
     } catch (error) {
       console.error(error);
       setMessage("Action failed. Try again.");
@@ -89,6 +95,49 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleUpdate = async (payload) => {
+    if (!editingCourse) {
+      return;
+    }
+    try {
+      setLoading(true);
+      const course = await updateCourse(editingCourse.id, payload);
+      setMessage(`Updated ${course.title}`);
+      setSelectedCourse(course);
+      setEditingCourse(null);
+      setShowForm(false);
+      await loadCourses();
+    } catch (error) {
+      console.error(error);
+      setMessage("Failed to update course.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (course) => {
+    if (!window.confirm(`Delete course '${course.title}'? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      setLoading(true);
+      await deleteCourse(course.id);
+      setMessage(`Deleted ${course.title}`);
+      setSelectedCourse(null);
+      await loadCourses();
+    } catch (error) {
+      console.error(error);
+      setMessage("Failed to delete course.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEdit = (course) => {
+    setEditingCourse(course);
+    setShowForm(true);
   };
 
   const statusCounts = useMemo(() => {
@@ -135,6 +184,42 @@ function App() {
       {message && <div className="alert alert-info">{message}</div>}
 
       <div className="row g-3 mb-4">
+        <div className="col-12">
+          <div className="card shadow-sm p-3">
+            <div className="row g-3 align-items-center">
+              <div className="col-md-4">
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Search by title, description, or category"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </div>
+              <div className="col-md-3">
+                <select
+                  className="form-select"
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                >
+                  <option value="ALL">All statuses</option>
+                  <option value="DRAFT">Draft</option>
+                  <option value="PENDING">Pending</option>
+                  <option value="APPROVED">Approved</option>
+                  <option value="REJECTED">Rejected</option>
+                  <option value="PUBLISHED">Published</option>
+                  <option value="ARCHIVED">Archived</option>
+                </select>
+              </div>
+              <div className="col-md-5 text-md-end">
+                <span className="text-muted">{loading ? "Refreshing…" : `${courses.length} courses`}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="row g-3 mb-4">
         {Object.entries(statusCounts).map(([status, count]) => (
           <div key={status} className="col-6 col-md-4 col-xl-2">
             <div className="card shadow-sm status-card p-3">
@@ -176,11 +261,26 @@ function App() {
         </section>
 
         <aside className="col-xl-5">
-          <CourseDetail course={selectedCourse} role={role.value} onAction={transition} />
+          <CourseDetail
+            course={selectedCourse}
+            role={role.value}
+            onAction={transition}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+          />
         </aside>
       </div>
 
-      {showForm && <CourseForm onClose={() => setShowForm(false)} onSubmit={handleCreate} />}
+      {showForm && (
+        <CourseForm
+          onClose={() => {
+            setShowForm(false);
+            setEditingCourse(null);
+          }}
+          onSubmit={editingCourse ? handleUpdate : handleCreate}
+          initialValues={editingCourse}
+        />
+      )}
     </div>
   );
 }
