@@ -3,21 +3,6 @@
 
 ---
 
-## Table of Contents
-1. [System Overview](#1-system-overview)
-2. [Course Approval Workflow](#2-course-approval-workflow)
-3. [User Roles & Permissions](#3-user-roles--permissions)
-4. [Course States & Transitions](#4-course-states--transitions)
-5. [Course Upload Requirements](#5-course-upload-requirements)
-6. [Admin Review Checklist](#6-admin-review-checklist)
-7. [Database Design](#7-database-design)
-8. [Frontend Features](#8-frontend-features)
-9. [Advanced Search & Filters](#9-advanced-search--filters)
-10. [Analytics Dashboard](#10-analytics-dashboard)
-11. [System Architecture](#11-system-architecture)
-
----
-
 ## 1. System Overview
 
 A full-stack course management platform enabling instructors to create and submit courses, admins to review and approve content, and students to access published learning materials.
